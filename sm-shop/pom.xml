@@ -150,6 +150,32 @@
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
 			</plugin>
+			<plugin>
+			<groupId>org.jacoco</groupId>
+			<artifactId>jacoco-maven-plugin</artifactId>
+			<executions>
+				<execution>
+					<id>prepare-agent</id>
+					<goals>
+						<goal>prepare-agent</goal>
+					</goals>
+					<configuration>
+              			<destFile>${jacoco.reportPath}/jacoco.exec</destFile>
+					</configuration>
+				</execution>
+				<execution>
+					<id>report</id>
+					<phase>prepare-package</phase>
+					<goals>
+						<goal>report</goal>
+					</goals>
+					<configuration>
+						<dataFile>${jacoco.reportPath}/jacoco.exec</dataFile>
+						<outputDirectory>${jacoco.reportPath}/${project.artifactId}</outputDirectory>
+					</configuration>
+				</execution>
+			</executions>
+		</plugin>
 		</plugins>
 		<finalName>shopizer</finalName>
 	</build>

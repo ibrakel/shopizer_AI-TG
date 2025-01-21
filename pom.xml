@@ -79,6 +79,9 @@
 		<coverage.lines>.30</coverage.lines>
 		<coverage.branches>.37</coverage.branches>
 
+		<!-- Add this property to define report path -->
+		<jacoco.reportPath>${project.basedir}/coverage-reports</jacoco.reportPath>
+
 	</properties>
 
 	<!--BOM -->
@@ -560,37 +563,44 @@
 					</execution>
 				</executions>
 			</plugin>
-			<!--OSSRH -->
-
-			<!-- 			
 			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-javadoc-plugin</artifactId>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>0.8.11</version>
 				<executions>
 					<execution>
-						<id>attach-javadocs</id>
+						<id>prepare-agent</id>
 						<goals>
-							<goal>jar</goal>
+							<goal>prepare-agent</goal>
 						</goals>
+						<configuration>
+							<destFile>${jacoco.reportPath}/jacoco.exec</destFile>
+						</configuration>
+					</execution>
+					<execution>
+						<id>report</id>
+						<phase>prepare-package</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+						<configuration>
+							<dataFile>${jacoco.reportPath}/jacoco.exec</dataFile>
+							<outputDirectory>${jacoco.reportPath}/report</outputDirectory>
+						</configuration>
+					</execution>
+					<execution>
+						<id>report-aggregate</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>report-aggregate</goal>
+						</goals>
+						<configuration>
+							<dataFile>${jacoco.reportPath}/jacoco.exec</dataFile>
+							<outputDirectory>${jacoco.reportPath}/aggregate-report</outputDirectory>
+						</configuration>
 					</execution>
 				</executions>
 			</plugin>
-			
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-gpg-plugin</artifactId>
-				<version>1.5</version>
-				<executions>
-					<execution>
-						<id>sign-artifacts</id>
-						<phase>verify</phase>
-						<goals>
-							<goal>sign</goal>
-						</goals>
-					</execution>
-				</executions>
-			</plugin> 
-			-->
 
 		</plugins>
 	</build>
