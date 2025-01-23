@@ -585,7 +585,16 @@
 						</goals>
 						<configuration>
 							<dataFile>${jacoco.reportPath}/jacoco.exec</dataFile>
-							<outputDirectory>${jacoco.reportPath}/report</outputDirectory>
+							<outputDirectory>${jacoco.reportPath}/consolidated-report</outputDirectory>
+							<formats>
+								<format>HTML</format>
+								<format>XML</format>
+								<format>CSV</format>
+							</formats>
+							<title>Consolidated Coverage Report</title>
+							<groupId>${project.groupId}</groupId>
+							<artifactId>${project.artifactId}</artifactId>
+							<version>${project.version}</version>
 						</configuration>
 					</execution>
 					<execution>
@@ -597,6 +606,12 @@
 						<configuration>
 							<dataFile>${jacoco.reportPath}/jacoco.exec</dataFile>
 							<outputDirectory>${jacoco.reportPath}/aggregate-report</outputDirectory>
+							<formats>
+								<format>HTML</format>
+								<format>XML</format>
+								<format>CSV</format>
+							</formats>
+							<title>Full Project Coverage Report</title>
 						</configuration>
 					</execution>
 				</executions>

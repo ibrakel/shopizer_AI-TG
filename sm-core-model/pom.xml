@@ -206,6 +206,14 @@
 							<configuration>
 								<dataFile>${jacoco.reportPath}/jacoco.exec</dataFile>
 								<outputDirectory>${jacoco.reportPath}/${project.artifactId}</outputDirectory>
+								<formats>
+									<format>HTML</format>
+									<format>CSV</format>
+								</formats>
+								<title>${project.artifactId} Coverage Report</title>
+								<groupId>${project.groupId}</groupId>
+								<artifactId>${project.artifactId}</artifactId>
+								<version>${project.version}</version>
 							</configuration>
 						</execution>
 					</executions>
