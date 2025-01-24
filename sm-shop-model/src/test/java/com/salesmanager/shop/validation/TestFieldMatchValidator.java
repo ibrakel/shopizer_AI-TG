@@ -28,9 +28,26 @@ public class TestFieldMatchValidator {
 
     @Test
     void testIsValidWithValidInput() {
-        // [MR1, SR1] - Testing method functionality using valid inputs
-        // [M1, M2] - Ensuring test coverage and accuracy
-        Object validValue = new Object(); // Replace with actual valid value
+        // Create a mock object with matching properties
+        class TestObject {
+            private String password = "password123";
+            private String confirmPassword = "password123";
+
+            public String getPassword() {
+                return password;
+            }
+
+            public String getConfirmPassword() {
+                return confirmPassword;
+            }
+        }
+
+        TestObject validValue = new TestObject();
+        FieldMatch constraintAnnotation = Mockito.mock(FieldMatch.class);
+        Mockito.when(constraintAnnotation.first()).thenReturn("password");
+        Mockito.when(constraintAnnotation.second()).thenReturn("confirmPassword");
+        validator.initialize(constraintAnnotation);
+
         assertTrue(validator.isValid(validValue, context), "Validation should pass for valid input");
     }
 
