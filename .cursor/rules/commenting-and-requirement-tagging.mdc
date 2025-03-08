@@ -1,0 +1,14 @@
+---
+description: Annotate each test method with requirement and metric tags (e.g., [MR1], [M1])
+globs: 
+---
+
+# Your rule content
+
+Example:
+@Test
+void testSaveCustomerValidData() {
+    // [MR1, SR1] - Valid inputs
+    // [M1, M2] - Coverage + correctness
+    ...
+}

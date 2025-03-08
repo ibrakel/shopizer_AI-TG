@@ -1,0 +1,9 @@
+---
+description: Maintain a centralized list of all methods—especially public and business-critical—across Shopizer’s services, controllers, and models.
+globs: 
+---
+
+# Your rule content
+
+Enumerate methods in each class and track which are tested vs. pending.
+Aim for a defined coverage threshold (e.g., 80%+ line coverage).

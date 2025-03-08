@@ -1,0 +1,11 @@
+---
+description: If any methods remain below the desired coverage threshold or are untested, prompt the AI again to generate additional tests.
+globs: 
+---
+
+# Your rule content
+
+
+
+Re-check the coverage list to locate untested methods.
+Issue new prompts for the AI to fill these gaps until targets are reached.
