@@ -1,0 +1,10 @@
+---
+description: Ensure each tested method has positive scenarios (valid), negative scenarios (invalid/error), and edge conditions (boundary extremes).
+globs: 
+---
+
+# Test Coverage
+
+
+
+For example, in CustomerService.saveCustomer(), test valid inputs, invalid/null inputs, and boundary constraints (e.g., max-length fields).

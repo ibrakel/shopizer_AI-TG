@@ -1,0 +1,10 @@
+---
+description: For each method, produce distinct unit, integration, and end-to-end (E2E) tests as applicable.
+globs: 
+---
+
+# Multi layered tests
+
+Unit tests target individual methods in isolation.
+Integration tests verify interplay between components in the same module.
+E2E tests confirm cross-module flows (e.g., REST controllers calling services).

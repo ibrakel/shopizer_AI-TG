@@ -1,0 +1,10 @@
+---
+description: Use Maven and JaCoCo to compile tests, run them, and generate coverage reports in target/site/jacoco.
+globs: 
+alwaysApply: false
+---
+
+# test runs
+
+Perform mvn clean test regularly.
+Check index.html to identify lines or branches missing coverage.

@@ -1,0 +1,12 @@
+---
+description: Verify Shopizer’s REST controllers (e.g., CustomerApi, OrderApi) either with MockMVC or full Spring Boot context.
+globs: 
+alwaysApply: false
+---
+
+# endpoints
+
+
+
+Check HTTP response codes, JSON payloads, and correct service invocations.
+Include positive (200 OK), client error (400), unauthorized (401/403), etc.

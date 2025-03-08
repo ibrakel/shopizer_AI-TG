@@ -1,0 +1,10 @@
+---
+description: Provide a concluding summary once coverage meets thresholds, detailing coverage percentages, a confidence metric, and rationale for the chosen tests.
+globs: 
+alwaysApply: false
+---
+
+# reporting
+
+Example output:
+	“Achieved 90% line coverage for sm-core-modules. Confidence: 95%. Rationale: Thorough boundary and integration tests ensure robust validation.”
