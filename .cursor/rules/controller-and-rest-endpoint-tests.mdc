@@ -3,7 +3,7 @@ description: Verify Shopizer’s REST controllers (e.g., CustomerApi, OrderApi) 
 globs: 
 ---
 
-# Your rule content
+# endpoints
 
 
 

@@ -3,7 +3,7 @@ description: Ensure each tested method has positive scenarios (valid), negative 
 globs: 
 ---
 
-# Your rule content
+# Test Coverage
 
 
 

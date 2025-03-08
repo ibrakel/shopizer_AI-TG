@@ -3,7 +3,7 @@ description: For each method, produce distinct unit, integration, and end-to-end
 globs: 
 ---
 
-# Your rule content
+# Multi layered tests
 
 Unit tests target individual methods in isolation.
 Integration tests verify interplay between components in the same module.

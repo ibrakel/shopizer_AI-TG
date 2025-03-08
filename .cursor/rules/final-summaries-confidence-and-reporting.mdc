@@ -3,7 +3,7 @@ description: Provide a concluding summary once coverage meets thresholds, detail
 globs: 
 ---
 
-# Your rule content
+# reporting
 
 Example output:
 	“Achieved 90% line coverage for sm-core-modules. Confidence: 95%. Rationale: Thorough boundary and integration tests ensure robust validation.”

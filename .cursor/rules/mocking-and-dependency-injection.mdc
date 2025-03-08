@@ -1,9 +1,9 @@
 ---
-description: Definition: Use mocking frameworks (e.g., Mockito) to isolate the method under test from external or database dependencies.
+description: Use mocking frameworks (e.g., Mockito) to isolate the method under test from external or database dependencies.
 globs: 
 ---
 
-# Your rule content
+# Mock up data
 
 
 Mark repositories or services as @Mock.

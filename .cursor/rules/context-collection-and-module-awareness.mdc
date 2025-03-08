@@ -3,9 +3,14 @@ description: Gather and provide all relevant Java classes from the Shopizer code
 globs: 
 ---
 
-# Your rule content
+# Context awareness 
 
 
 Implementation:
-    Load specific packages/classes (e.g., com.salesmanager.core.business.services, com.salesmanager.shop.store.api, etc.. )
+    Load specific packages/classes form all java files inside the following paths and if any class is mentioned inside those classes
+    - /sm-core/src/main
+    - /sm-core-model/src/main
+    - /sm-core-modules/src/main
+    - /sm-shop/src/main
+    - /sm-shop-model/src/main
     Keep the AI’s context updated as new or modified files appear.

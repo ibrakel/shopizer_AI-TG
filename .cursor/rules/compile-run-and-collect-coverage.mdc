@@ -3,7 +3,7 @@ description: Use Maven and JaCoCo to compile tests, run them, and generate cover
 globs: 
 ---
 
-# Your rule content
+# test runs
 
 Perform mvn clean test regularly.
 Check index.html to identify lines or branches missing coverage.
