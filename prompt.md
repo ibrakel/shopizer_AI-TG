@@ -112,7 +112,7 @@ Never-Ending Coverage Requirement
         1.	Identify all methods that require testing.
         2.	Generate positive, negative, and edge case tests for each.
         3.	Run or simulate test execution, then check coverage.
-        4.	If errors occur (e.g., missing methods, compile errors, linter issues), fix them immediately, but do not stop.
+        4.	If errors occur (e.g., missing methods, compile errors, linter issues), fix them immediately, but do not stop the process of test generation, if the error presists for more than 5 tool calls proceed to the next method.
         5.	If coverage is incomplete, generate more tests for the uncovered methods or lines.
         6.	Repeat until all methods have sufficient coverage or meet the project's defined coverage threshold.
 
