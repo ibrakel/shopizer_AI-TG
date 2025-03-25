@@ -1,0 +1,1 @@
+"""Java code parser module for analyzing Shopizer source files.""" 

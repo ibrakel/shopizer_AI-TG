@@ -1,0 +1,12 @@
+---
+description: Use mocking frameworks (e.g., Mockito) to isolate the method under test from external or database dependencies.
+globs: 
+alwaysApply: false
+---
+
+# Mock up data
+
+
+Mark repositories or services as @Mock.
+Use @InjectMocks for the primary service or controller under test.
+Reserve real DB calls for integration or E2E tests if required.
