@@ -29,6 +29,8 @@ sm-shop/.project
 */sm-shop/src/main/resources/*
 sm-shop/src/main/resources/database.properties
 .DS_Store
-
+.env
+*.pyc
 .mvnw/*.jar
 **/coverage-reports/
+debug_output/

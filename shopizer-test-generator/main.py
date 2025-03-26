@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Main script for generating JUnit 5 test cases for Java methods.
+Main script for generating JUnit 5 test cases for Java methods using OpenAI API.
 """
 
 import os
@@ -20,6 +20,7 @@ def main():
     parser = argparse.ArgumentParser(description="Generate JUnit 5 test cases for Java methods")
     parser.add_argument("source_dir", help="Directory containing Java source files")
     parser.add_argument("--test-dir", help="Directory for generated test files", default=None)
+    parser.add_argument("--api-key", help="OpenAI API key (or set OPENAI_API_KEY environment variable)", default=None)
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
     args = parser.parse_args()
 
@@ -30,6 +31,13 @@ def main():
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[logging.StreamHandler()]
     )
+
+    # Set OpenAI API key if provided
+    if args.api_key:
+        os.environ["OPENAI_API_KEY"] = args.api_key
+    elif not os.environ.get("OPENAI_API_KEY"):
+        logging.error("OpenAI API key is required. Provide it with --api-key or set OPENAI_API_KEY environment variable.")
+        sys.exit(1)
 
     try:
         # Validate source directory
