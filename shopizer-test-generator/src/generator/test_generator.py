@@ -9,7 +9,7 @@ import re
 from typing import List, Dict, Tuple, Optional, Set
 import datetime
 from config.settings import Config
-from src.parser.java_parser import JavaMethod, get_method_dependencies
+from src.parser.java_parser import JavaMethod, get_method_dependencies, MethodInfo
 from templates.test_templates import (
     get_test_class_template,
     get_positive_test_template,
@@ -24,16 +24,16 @@ class TestGenerator:
     """
     Generates JUnit 5 test cases for Java methods.
     """
-    def __init__(self, methods: List[JavaMethod], output_dir: str):
+    def __init__(self, model_client, templates):
         """
-        Initialize the test generator.
+        Initialize the test generator with a model client and templates.
         
         Args:
-            methods (List[JavaMethod]): List of parsed Java methods
-            output_dir (str): Directory where generated tests will be stored
+            model_client: An AI model client to generate test code
+            templates: An instance of TestTemplates for formatting
         """
-        self.methods = methods
-        self.output_dir = output_dir
+        self.model = model_client
+        self.templates = templates
         self.tested_methods: Set[str] = set()  # Track tested methods by qualified name
         self.method_coverage: Dict[str, float] = {}  # Track coverage per method
         self.method_generation_time: Dict[str, float] = {}  # Track generation time per method
@@ -486,6 +486,140 @@ class TestGenerator:
         # Write back to file
         with open(test_class_file, 'w') as f:
             f.write(new_content)
+
+    def generate_test_class(self, class_info: Dict) -> str:
+        """
+        Generate a complete test class for the given Java class info.
+        
+        Args:
+            class_info (Dict): Dictionary containing class information
+            
+        Returns:
+            str: Generated test class code
+        """
+        test_methods = []
+        for method in class_info["methods"]:
+            # Generate tests for each method
+            positive_test = self._generate_test_method(method, "POSITIVE")
+            negative_test = self._generate_test_method(method, "NEGATIVE")
+            edge_test = self._generate_test_method(method, "EDGE")
+            test_methods.extend([positive_test, negative_test, edge_test])
+            
+            # Add integration test if method is public and has parameters
+            if "public" in method.modifiers and method.parameters:
+                integration_test = self._generate_test_method(method, "INTEGRATION")
+                test_methods.append(integration_test)
+        
+        # Format the complete test class
+        test_class_code = self.templates.format_test_class(
+            package=class_info["package"],
+            class_name=f"{class_info['class_name']}Test",
+            imports=self._get_required_imports(class_info),
+            setup=self._generate_setup(class_info),
+            test_methods="\n".join(test_methods),
+            timestamp=time.strftime("%Y-%m-%d %H:%M:%S")
+        )
+        
+        return test_class_code
+    
+    def _generate_test_method(self, method: MethodInfo, test_type: str) -> str:
+        """
+        Generate a test method for a given method and test type.
+        
+        Args:
+            method (MethodInfo): Method information
+            test_type (str): Type of test to generate
+            
+        Returns:
+            str: Generated test method code
+        """
+        description = f"{test_type} test for method {method.name}"
+        requirements = f"// [MR1, SR1] - Testing {method.name} with {test_type} inputs"
+        metrics = f"// [M1, M2, M3, M4, M5] - Coverage, correctness, generation time, pass rate, and standards"
+        
+        # Generate method body based on test type
+        method_body = self._generate_method_body(method, test_type)
+        
+        return self.templates.format_test_method(
+            method_name=f"test{method.name.capitalize()}{test_type.capitalize()}",
+            description=description,
+            requirements=requirements,
+            metrics=metrics,
+            method_body=method_body
+        )
+    
+    def _generate_method_body(self, method: MethodInfo, test_type: str) -> str:
+        """
+        Generate the body of a test method.
+        
+        Args:
+            method (MethodInfo): Method information
+            test_type (str): Type of test to generate
+            
+        Returns:
+            str: Generated method body
+        """
+        # This is where you would integrate with your AI model
+        # For now, we'll return a simple placeholder
+        if test_type == "POSITIVE":
+            return f"""
+        // Test {method.name} with valid inputs
+        // TODO: Replace with actual test implementation
+        assertNotNull(instance);"""
+        elif test_type == "NEGATIVE":
+            return f"""
+        // Test {method.name} with invalid inputs
+        // TODO: Replace with actual test implementation
+        assertThrows(IllegalArgumentException.class, () -> {{
+            // Add test code here
+        }});"""
+        elif test_type == "EDGE":
+            return f"""
+        // Test {method.name} with boundary conditions
+        // TODO: Replace with actual test implementation
+        assertNotNull(instance);"""
+        else:  # INTEGRATION
+            return f"""
+        // Test {method.name} integration with other components
+        // TODO: Replace with actual test implementation
+        assertNotNull(instance);"""
+    
+    def _generate_setup(self, class_info: Dict) -> str:
+        """
+        Generate the setup method for the test class.
+        
+        Args:
+            class_info (Dict): Class information
+            
+        Returns:
+            str: Generated setup method
+        """
+        return f"""
+    @BeforeEach
+    void setUp() {{
+        // [MR1, SR1] - Setup for testing {class_info['class_name']}
+        // [M5] - Ensuring compliance with Java testing standards
+        instance = new {class_info['class_name']}();
+    }}"""
+    
+    def _get_required_imports(self, class_info: Dict) -> str:
+        """
+        Get the required import statements for the test class.
+        
+        Args:
+            class_info (Dict): Class information
+            
+        Returns:
+            str: Import statements
+        """
+        imports = [
+            f"package {class_info['package']};" if class_info["package"] else "",
+            "import org.junit.jupiter.api.BeforeEach;",
+            "import org.junit.jupiter.api.Test;",
+            "import static org.junit.jupiter.api.Assertions.*;",
+            f"import {class_info['package']}.{class_info['class_name']};"
+        ]
+        return "\n".join(imports)
 
 
 def generate_tests(methods: List[JavaMethod], output_dir: str) -> Dict[str, Dict]:

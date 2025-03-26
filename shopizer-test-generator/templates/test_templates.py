@@ -213,4 +213,43 @@ def get_acceptance_test_template(method_name, use_case_description):
         // Assert
         // TODO: Verify the expected end-to-end outcome
     }}
-""" 
+"""
+
+
+class TestTemplates:
+    def format_test_class(self, package: str, class_name: str, imports: str, setup: str, test_methods: str, timestamp: str) -> str:
+        """
+        Format the full test class using the provided parameters.
+        """
+        template = f"""{imports}
+
+/**
+ * Test class for {class_name.replace("Test", "")}
+ * Generated on {timestamp}
+ */
+public class {class_name} {{
+    private {class_name.replace("Test", "")} instance;
+
+    {setup}
+
+{test_methods}
+}}
+"""
+        return template
+    
+    def format_test_method(self, method_name: str, description: str, requirements: str, metrics: str, method_body: str) -> str:
+        """
+        Format an individual test method.
+        """
+        template = f"""
+    /**
+     * {description}
+     * {requirements}
+     * {metrics}
+     */
+    @Test
+    public void {method_name}() {{
+        {method_body}
+    }}
+"""
+        return template 

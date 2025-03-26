@@ -5,8 +5,10 @@ This module uses regular expressions to locate and parse classes, methods, and t
 
 import os
 import re
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Any
 from config.settings import Config
+import javalang
+from dataclasses import dataclass
 
 
 class JavaMethod:
@@ -367,4 +369,93 @@ def get_method_by_name(methods: List[JavaMethod], class_name: str, method_name: 
     for method in methods:
         if method.class_name == class_name and method.method_name == method_name:
             return method
-    return None 
+    return None
+
+
+@dataclass
+class MethodInfo:
+    name: str
+    parameters: List[Dict[str, Any]]
+    return_type: str
+    modifiers: List[str]
+    body: str = ""
+
+
+class JavaClassParser:
+    def parse_file(self, file_path: str) -> Dict[str, Any]:
+        """
+        Parse a Java file and return a dictionary containing:
+         - package
+         - class name
+         - method details
+         - import statements
+        """
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            tree = javalang.parse.parse(content)
+            package_name = tree.package.name if tree.package else ""
+            class_type = next((t for t in tree.types if isinstance(t, javalang.tree.ClassDeclaration)), None)
+            
+            if not class_type:
+                raise ValueError(f"No class definition found in {file_path}")
+                
+            class_name = class_type.name
+            methods = self._extract_methods(class_type)
+            imports = self._extract_imports(tree)
+            
+            return {
+                "package": package_name,
+                "class_name": class_name,
+                "methods": methods,
+                "imports": imports
+            }
+        except Exception as e:
+            print(f"Error parsing Java file {file_path}: {str(e)}")
+            raise
+    
+    def _extract_methods(self, class_type) -> List[MethodInfo]:
+        """Extract method information from the class"""
+        method_list = []
+        if not class_type or not hasattr(class_type, 'methods'):
+            return method_list
+            
+        for method in class_type.methods:
+            try:
+                params = []
+                for param in method.parameters:
+                    param_type = param.type.name if hasattr(param.type, 'name') else str(param.type)
+                    params.append({
+                        "name": param.name,
+                        "type": param_type
+                    })
+                
+                return_type = method.return_type.name if method.return_type else "void"
+                modifiers = list(method.modifiers) if method.modifiers else []
+                
+                body = ""
+                if method.body:
+                    body = " ".join([str(statement) for statement in method.body])
+                
+                method_list.append(MethodInfo(
+                    name=method.name,
+                    parameters=params,
+                    return_type=return_type,
+                    modifiers=modifiers,
+                    body=body
+                ))
+            except Exception as e:
+                print(f"Error extracting method {method.name}: {str(e)}")
+                continue
+                
+        return method_list
+    
+    def _extract_imports(self, tree) -> List[str]:
+        """Extract import statements from the class"""
+        imports = []
+        if hasattr(tree, 'imports'):
+            for imp in tree.imports:
+                if hasattr(imp, 'path'):
+                    imports.append(imp.path)
+        return imports 
