@@ -1,117 +1,87 @@
+#!/usr/bin/env python3
 """
-Main module for Shopizer test generator.
-This script provides the entry point for the test generation process.
+Main script for generating JUnit 5 test cases for Java methods.
 """
 
 import os
-import time
-import argparse
 import sys
-from datetime import datetime
-from config.settings import Config
-from src.parser.java_parser import JavaClassParser
+import argparse
+import logging
+from typing import List, Dict
+
 from src.generator.test_generator import TestGenerator
-from src.validators.coverage_validator import CoverageValidator
-from templates.test_templates import TestTemplates
-from typing import Tuple
-
-
-class DummyModelClient:
-    def generate(self, prompt: str) -> str:
-        return "// Generated test code by DummyModelClient"
-
-
-def validate_file_path(file_path: str) -> bool:
-    """
-    Validate if the file exists and is a Java file
-    """
-    # Convert relative path to absolute path if needed
-    abs_path = os.path.abspath(file_path)
-    return os.path.isfile(abs_path) and file_path.endswith('.java')
-
-
-def setup_test_file_path(source_file: str) -> Tuple[str, str, str]:
-    """
-    Create the test file path components from a source file path.
-    Returns a tuple of (package_path, file_name, full_path)
-    """
-    abs_path = os.path.abspath(source_file)
-    base_name = os.path.basename(abs_path)
-    if base_name.endswith(".java"):
-        test_name = base_name.replace(".java", "Test.java")
-    else:
-        test_name = base_name + "Test.java"
-    
-    dir_path = os.path.dirname(abs_path)
-    package_path = dir_path.replace("src/main/java", "src/test/java")
-    full_path = os.path.join(package_path, test_name)
-    
-    return package_path, test_name, full_path
-
-
-def write_test_file(file_path: str, content: str) -> None:
-    """Write the generated test content to a file."""
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-    with open(file_path, 'w', encoding='utf-8') as f:
-        f.write(content)
-    print(f"Test file written: {file_path}")
-
-
-def process_single_file(file_path: str, coverage_threshold: float) -> None:
-    """
-    Process a single Java file and generate its test class
-    """
-    if not validate_file_path(file_path):
-        print(f"Error: Invalid Java source file: {file_path}")
-        print("Please ensure:")
-        print("1. The file exists")
-        print("2. The path is correct")
-        print("3. The file has a .java extension")
-        return
-
-    parser = JavaClassParser()
-    templates = TestTemplates()
-    model_client = DummyModelClient()
-    generator = TestGenerator(model_client, templates)
-    validator = CoverageValidator()
-
-    try:
-        print(f"Processing file: {file_path}")
-        # Parse the Java file
-        class_info = parser.parse_file(file_path)
-        # Generate test class code
-        test_class_code = generator.generate_test_class(class_info)
-        # Create test file path
-        package_path, test_name, test_file_path = setup_test_file_path(file_path)
-        # Write test file
-        write_test_file(test_file_path, test_class_code)
-        
-        # Check coverage
-        coverage = validator.check_coverage(test_file_path)
-        print(f"Coverage for {test_file_path}: {coverage*100}%")
-        if coverage < coverage_threshold:
-            print(f"Warning: Coverage {coverage*100}% is below threshold {coverage_threshold*100}%")
-    except Exception as e:
-        print(f"Error processing {file_path}: {str(e)}")
+from src.utils.file_utils import validate_path, setup_test_paths
+from src.utils.java_parser import JavaMethodParser
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Shopizer Test Generator')
-    parser.add_argument('--source', required=True, help='Path to the Java source file')
-    parser.add_argument('--threshold', type=float, default=0.9, help='Coverage threshold (default: 0.9)')
-    
+    """Main entry point for the test generator."""
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description="Generate JUnit 5 test cases for Java methods")
+    parser.add_argument("source_dir", help="Directory containing Java source files")
+    parser.add_argument("--test-dir", help="Directory for generated test files", default=None)
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
     args = parser.parse_args()
-    
-    print("=" * 80)
-    print("Shopizer Test Generator")
-    print("=" * 80)
-    print(f"Started at: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Source file: {args.source}")
-    print(f"Coverage threshold: {args.threshold * 100}%")
-    print("-" * 80)
-    
-    # Process the specified file
-    process_single_file(args.source, args.threshold)
+
+    # Configure logging
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[logging.StreamHandler()]
+    )
+
+    try:
+        # Validate source directory
+        source_dir = validate_path(args.source_dir)
+        if not source_dir:
+            logging.error(f"Invalid source directory: {args.source_dir}")
+            sys.exit(1)
+
+        # Set up test directory
+        test_dir = setup_test_paths(source_dir, args.test_dir)
+        if not test_dir:
+            logging.error("Failed to set up test directory")
+            sys.exit(1)
+
+        # Find Java source files
+        java_files = []
+        for root, _, files in os.walk(source_dir):
+            for file in files:
+                if file.endswith(".java"):
+                    java_files.append(os.path.join(root, file))
+
+        if not java_files:
+            logging.error(f"No Java files found in {source_dir}")
+            sys.exit(1)
+
+        logging.info(f"Found {len(java_files)} Java files")
+
+        # Initialize test generator
+        generator = TestGenerator(source_dir, test_dir)
+
+        # Generate tests
+        report = generator.generate_all_tests(java_files)
+
+        # Print report
+        logging.info("\nTest Generation Report:")
+        logging.info(f"Total methods processed: {report['total_methods']}")
+        logging.info(f"Total tests generated: {report['tests_generated']}")
+        logging.info(f"Total generation time: {report['total_time']:.2f} seconds")
+        logging.info(f"Average time per method: {report['avg_time_per_method']:.2f} seconds")
+
+        # Print coverage information
+        logging.info("\nCoverage Report:")
+        for method, coverage in report["method_coverage"].items():
+            logging.info(f"{method}: {coverage*100:.1f}%")
+
+        logging.info("\nTest generation completed successfully")
+
+    except Exception as e:
+        logging.error(f"Error during test generation: {str(e)}")
+        if args.verbose:
+            logging.exception("Detailed error information:")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

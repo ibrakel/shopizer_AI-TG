@@ -1,668 +1,394 @@
 """
-Test generator module for creating Maven-compatible JUnit 5 test cases.
-This module takes parsed Java methods and generates comprehensive test suites.
+Test generator module for generating test cases from Java source code.
 """
 
 import os
 import time
 import re
-from typing import List, Dict, Tuple, Optional, Set
+from typing import List, Dict, Tuple, Optional, Set, Union, Any
 import datetime
-from config.settings import Config
+import logging
+from ..models.test_to_code_model import TestToCodeModel
 from src.parser.java_parser import JavaMethod, get_method_dependencies, MethodInfo
-from templates.test_templates import (
-    get_test_class_template,
-    get_positive_test_template,
-    get_negative_test_template, 
-    get_edge_test_template,
-    get_integration_test_template,
-    get_acceptance_test_template
-)
+from src.utils.coverage_tracker import CoverageTracker
 
 
 class TestGenerator:
     """
-    Generates JUnit 5 test cases for Java methods.
+    Test generator class that handles the generation of test cases from Java source code.
     """
-    def __init__(self, model_client, templates):
+    
+    def __init__(self, source_dir: str, test_dir: str):
         """
-        Initialize the test generator with a model client and templates.
+        Initialize the test generator.
         
         Args:
-            model_client: An AI model client to generate test code
-            templates: An instance of TestTemplates for formatting
+            source_dir (str): Directory containing source files
+            test_dir (str): Directory where test files will be generated
         """
-        self.model = model_client
-        self.templates = templates
-        self.tested_methods: Set[str] = set()  # Track tested methods by qualified name
-        self.method_coverage: Dict[str, float] = {}  # Track coverage per method
-        self.method_generation_time: Dict[str, float] = {}  # Track generation time per method
-        self.method_dependencies: Dict[str, List[str]] = {}  # Track dependencies between methods
+        self.source_dir = source_dir
+        self.test_dir = test_dir
+        self.test_model = TestToCodeModel()
+        self.coverage_tracker = CoverageTracker()
+        
+        # Track generation metrics
+        self.tested_methods: Set[str] = set()
+        self.method_coverage: Dict[str, float] = {}
+        self.generation_time: Dict[str, float] = {}
+        self.dependencies: Dict[str, List[str]] = {}
+        self.generated_tests: Dict[str, Set[str]] = {}  # Track generated tests per method
 
-    def generate_all_tests(self) -> Dict[str, Dict]:
-        """
-        Generate tests for all methods in the repository.
+    def _get_test_path(self, source_file: str) -> str:
+        """Convert source path to test path."""
+        parts = source_file.split(os.sep)
+        try:
+            main_idx = parts.index("main")
+            parts[main_idx] = "test"
+            # Get the filename and add Test suffix before .java
+            filename = parts[-1]
+            base_name = os.path.splitext(filename)[0]
+            parts[-1] = f"{base_name}Test.java"
+            return os.sep.join(parts)
+        except ValueError:
+            base = os.path.splitext(source_file)[0]
+            return f"{base}Test.java"
+
+    def _get_package_name(self, source_file: str) -> str:
+        """Extract package name from source file."""
+        try:
+            with open(source_file, 'r') as f:
+                content = f.read()
+            
+            package_match = re.search(r'package\s+([\w.]+);', content)
+            if package_match:
+                return package_match.group(1)
+        except Exception as e:
+            logging.error(f"Error extracting package name: {str(e)}")
         
-        Returns:
-            Dict[str, Dict]: Report containing test statistics
-        """
+        return ''
+
+    def _generate_test_class(self, test_file_path: str, method_info: List[Dict]) -> None:
+        """Generate a test class file."""
+        try:
+            # Create test directory if it doesn't exist
+            test_dir = os.path.join(os.path.dirname(test_file_path), 'test')
+            os.makedirs(test_dir, exist_ok=True)
+            
+            # Use a simple file name based on the class name
+            class_name = method_info[0]['class_name'] if isinstance(method_info, list) else 'Test'
+            test_file = os.path.join(test_dir, f"{class_name}Test.java")
+            
+            # Generate test class content
+            test_class_content = self._generate_test_class_content(method_info)
+            
+            # Write test class to file
+            with open(test_file, 'w') as f:
+                f.write(test_class_content)
+                
+            logging.info(f"Generated test class: {test_file}")
+            
+        except Exception as e:
+            logging.error(f"Error generating test class: {str(e)}")
+            raise
+
+    def _format_test_code(self, test_code: str, method_name: str, test_type: str) -> str:
+        """Format test code with proper structure and annotations."""
+        # Clean up the test code
+        test_code = test_code.strip()
+        
+        # Add method annotation and name
+        formatted_test = [
+            f"    @Test",
+            f"    void test{method_name}_{test_type}() {{",
+            "        // [MR1] - Testing method behavior",
+            f"        // [M1, M2] - Ensuring {test_type.lower()} scenario coverage",
+            ""
+        ]
+        
+        # Add test code with proper indentation
+        for line in test_code.split('\n'):
+            formatted_test.append(f"        {line.strip()}")
+        
+        # Close method
+        formatted_test.extend([
+            "    }",
+            ""
+        ])
+        
+        return '\n'.join(formatted_test)
+
+    def generate_all_tests(self, source_files: Union[List[str], Dict[str, str]]) -> Dict[str, Any]:
+        """Generate tests for all methods in the source files."""
+        total_methods = 0
+        total_tests = 0
         start_time = time.time()
-        print(f"Starting test generation for {len(self.methods)} methods...")
         
-        # First, analyze dependencies between methods to better organize tests
-        self._analyze_dependencies()
-        
-        # Group methods by class
-        methods_by_class = self._group_methods_by_class()
-        
-        # Generate test classes
-        total_tests_generated = 0
-        for class_name, methods in methods_by_class.items():
-            generated = self._generate_test_class(class_name, methods)
-            total_tests_generated += generated
+        if isinstance(source_files, list):
+            # Process list of source files
+            for source_file in source_files:
+                try:
+                    class_name, package_name, methods = self._parse_java_file(source_file)
+                    if not methods:
+                        continue
+                        
+                    test_cases = []
+                    for method_name, method_code in methods.items():
+                        try:
+                            method_info = self._extract_method_info(method_name, method_code)
+                            total_methods += 1
+                            
+                            for test_type in ['Positive', 'Negative', 'Edge']:
+                                test_code = self.test_model.generate_test_case(method_info, test_type)
+                                if test_code:
+                                    test_cases.append(test_code)
+                                    total_tests += 1
+                                    
+                        except Exception as e:
+                            logging.error(f"Error generating tests for method {method_name}: {str(e)}")
+                            continue
+                    
+                    if test_cases:
+                        test_file_path = self._get_test_file_path(source_file)
+                        self._generate_test_class(class_name, package_name, test_cases, test_file_path)
+                        
+                except Exception as e:
+                    logging.error(f"Error processing file {source_file}: {str(e)}")
+                    continue
+        else:
+            # Process dictionary of methods
+            test_cases = []
+            for method_name, method_code in source_files.items():
+                try:
+                    method_info = self._extract_method_info(method_name, method_code)
+                    total_methods += 1
+                    
+                    for test_type in ['Positive', 'Negative', 'Edge']:
+                        test_code = self.test_model.generate_test_case(method_info, test_type)
+                        if test_code:
+                            test_cases.append(test_code)
+                            total_tests += 1
+                            
+                except Exception as e:
+                    logging.error(f"Error generating tests for method {method_name}: {str(e)}")
+                    continue
         
         end_time = time.time()
         total_time = end_time - start_time
+        avg_time = total_time / total_methods if total_methods > 0 else 0
         
-        # Prepare report
-        report = {
-            "total_methods": len(self.methods),
-            "total_tests_generated": total_tests_generated,
-            "total_generation_time": total_time,
-            "average_generation_time_per_method": total_time / len(self.methods) if self.methods else 0,
-            "method_coverage": self.method_coverage,
-            "method_generation_time": self.method_generation_time,
-            "timestamp": datetime.datetime.now().isoformat()
+        return {
+            'total_methods': total_methods,
+            'total_tests': total_tests,
+            'total_time': total_time,
+            'avg_time': avg_time
         }
-        
-        return report
 
-    def _analyze_dependencies(self) -> None:
-        """
-        Analyze dependencies between methods to identify integration test candidates.
-        """
-        print("Analyzing method dependencies...")
-        for method in self.methods:
-            qualified_name = method.get_qualified_name()
-            self.method_dependencies[qualified_name] = get_method_dependencies(method)
-
-    def _group_methods_by_class(self) -> Dict[str, List[JavaMethod]]:
-        """
-        Group methods by their class names.
+    def _get_test_file_path(self, source_file: str) -> str:
+        """Get the path for the test file."""
+        source_dir = os.path.dirname(source_file)
+        test_dir = os.path.join(source_dir, 'test')
+        os.makedirs(test_dir, exist_ok=True)
         
-        Returns:
-            Dict[str, List[JavaMethod]]: Dictionary mapping class names to method lists
-        """
-        methods_by_class = {}
-        for method in self.methods:
-            if method.class_name not in methods_by_class:
-                methods_by_class[method.class_name] = []
-            methods_by_class[method.class_name].append(method)
-        return methods_by_class
+        file_name = os.path.basename(source_file)
+        test_file_name = file_name.replace('.java', 'Test.java')
+        return os.path.join(test_dir, test_file_name)
 
-    def _generate_test_class(self, class_name: str, methods: List[JavaMethod]) -> int:
-        """
-        Generate a test class for a Java class.
+    def _extract_methods(self, content: str) -> List[Dict]:
+        """Extract methods from Java source code."""
+        methods = []
         
-        Args:
-            class_name (str): Name of the class being tested
-            methods (List[JavaMethod]): Methods in the class
+        # First get the class name
+        class_match = re.search(r'public\s+class\s+(\w+)', content)
+        if not class_match:
+            return []
+        
+        class_name = class_match.group(1)
+        
+        # Find all method declarations, excluding constructors and inner classes
+        method_pattern = r'(?:public|protected|private)\s+(?!class|interface|enum)(?!static\s+class)(?:\w+\s+)*(\w+)\s*\((.*?)\)(?:\s+throws\s+[\w,\s]+)?\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}'
+        method_matches = re.finditer(method_pattern, content, re.DOTALL)
+        
+        for match in method_matches:
+            method_name = match.group(1)
             
-        Returns:
-            int: Number of tests generated
-        """
-        # Skip if no methods to test
-        if not methods:
-            return 0
+            # Skip if method name is a Java keyword or looks like a constructor
+            if method_name in ['if', 'while', 'for', 'switch', 'try', 'catch'] or method_name == class_name:
+                continue
+            
+            # Skip if method name is an exception type
+            if method_name.endswith('Exception'):
+                continue
+            
+            method_info = {
+                'class_name': class_name,
+                'name': method_name,
+                'code': match.group(0),  # Full method including signature and body
+                'parameters': [p.strip() for p in match.group(2).split(',') if p.strip()],
+                'body': match.group(3).strip()
+            }
+            
+            # Log found method
+            logging.info(f"Found method: {method_info['name']}")
+            methods.append(method_info)
         
-        # Get package from the first method
-        package_name = methods[0].package_name
-        test_class_name = f"Test{class_name}"
+        return methods
+
+    def _group_methods_by_class(self, methods: List[Dict]) -> Dict[str, List[Dict]]:
+        """Group methods by their class name."""
+        grouped = {}
+        for method in methods:
+            class_name = method['class_name']
+            if class_name not in grouped:
+                grouped[class_name] = []
+            grouped[class_name].append(method)
+        return grouped
+
+    def _analyze_dependencies(self, methods: List[Dict]) -> List[str]:
+        """Analyze method dependencies."""
+        dependencies = set()
+        for method in methods:
+            # Extract types from parameters
+            for param in method['parameters']:
+                param_type = param.split()[0]
+                if not param_type.startswith(('int', 'long', 'boolean', 'String')):
+                    dependencies.add(param_type)
+            
+            # Extract types from method body
+            body = method['body']
+            type_pattern = r'new\s+([A-Za-z_][A-Za-z0-9_]*)'
+            for match in re.finditer(type_pattern, body):
+                dependencies.add(match.group(1))
+                
+        return list(dependencies)
+
+    def _generate_test_class_content(self, method_info: List[Dict]) -> str:
+        """Generate the content of the test class."""
+        if not method_info:
+            return ""
+            
+        class_name = method_info[0]['class_name']
         
-        # Start with the test class template
-        test_class_content = get_test_class_template(class_name)
+        # Generate imports
+        imports = [
+            "import org.junit.jupiter.api.Test;",
+            "import org.junit.jupiter.api.BeforeEach;",
+            "import org.junit.jupiter.api.extension.ExtendWith;",
+            "import org.mockito.Mock;",
+            "import org.mockito.InjectMocks;",
+            "import org.mockito.junit.jupiter.MockitoExtension;",
+            "import static org.junit.jupiter.api.Assertions.*;",
+            "import static org.mockito.Mockito.*;"
+        ]
         
-        # Add method imports if necessary
-        imports = self._generate_imports(methods)
-        
-        # Add package declaration
-        test_class_content = f"package {package_name};\n\n{imports}{test_class_content}"
+        # Start class
+        class_def = [
+            "",
+            "@ExtendWith(MockitoExtension.class)",
+            f"public class {class_name}Test {{",
+            "",
+            "    @InjectMocks",
+            f"    private {class_name} classUnderTest;",
+            ""
+        ]
         
         # Generate test methods for each method
         test_methods = []
-        total_tests = 0
+        for method in method_info:
+            # Generate test cases using the model
+            test_cases = self.test_model.generate_test_cases(method['body'])
+            test_methods.extend(test_cases)
         
-        for method in methods:
-            generated_tests = self._generate_tests_for_method(method)
-            test_methods.extend(generated_tests)
-            total_tests += len(generated_tests)
-            
-            # Mark this method as tested
-            self.tested_methods.add(method.get_qualified_name())
-        
-        # Add all test methods to the class content
-        test_class_content = test_class_content.replace("    // Test methods will be added here", '\n'.join(test_methods))
-        
-        # Ensure output directory exists
-        output_path = self._get_output_path(package_name)
-        os.makedirs(output_path, exist_ok=True)
-        
-        # Write the test class to file
-        with open(os.path.join(output_path, f"{test_class_name}.java"), 'w') as f:
-            f.write(test_class_content)
-        
-        print(f"Generated {total_tests} tests for class {class_name}")
-        return total_tests
+        # Combine all parts
+        content = "\n".join(imports + class_def + test_methods + ["}", ""])
+        return content
 
-    def _generate_imports(self, methods: List[JavaMethod]) -> str:
-        """
-        Generate import statements needed for the test class.
+    def _extract_method_info(self, method_name: str, method_code: str) -> Dict:
+        """Extract method information from the code."""
+        method_info = {
+            'name': method_name,
+            'return_type': 'void',  # Default
+            'parameters': [],
+            'exceptions': []
+        }
         
-        Args:
-            methods (List[JavaMethod]): Methods to be tested
-            
-        Returns:
-            str: Import statements as string
-        """
-        imports = set()
+        # Extract return type
+        return_type_match = re.search(r'(public|private|protected)?\s+(\w+)\s+' + method_name, method_code)
+        if return_type_match:
+            method_info['return_type'] = return_type_match.group(2)
         
-        # Add basic imports for non-JDK classes found in method signatures
-        for method in methods:
-            # Add parameter types
-            for param_type, _ in method.parameters:
-                if '.' in param_type and not param_type.startswith("java."):
-                    imports.add(f"import {param_type};")
-            
-            # Add return type
-            if '.' in method.return_type and not method.return_type.startswith("java."):
-                imports.add(f"import {method.return_type};")
-            
-            # Add exception types
-            for exception in method.exceptions:
-                if '.' in exception and not exception.startswith("java."):
-                    imports.add(f"import {exception};")
+        # Extract parameters
+        params_match = re.search(r'\((.*?)\)', method_code)
+        if params_match:
+            params = params_match.group(1).strip()
+            if params:
+                method_info['parameters'] = [p.strip() for p in params.split(',')]
         
-        return '\n'.join(sorted(imports)) + '\n\n' if imports else ''
+        # Extract exceptions
+        throws_match = re.search(r'throws\s+([\w,\s]+)', method_code)
+        if throws_match:
+            exceptions = throws_match.group(1).strip()
+            method_info['exceptions'] = [e.strip() for e in exceptions.split(',')]
+        
+        return method_info
 
-    def _generate_tests_for_method(self, method: JavaMethod) -> List[str]:
-        """
-        Generate all test methods for a single Java method.
-        
-        Args:
-            method (JavaMethod): Method to generate tests for
-            
-        Returns:
-            List[str]: Generated test methods
-        """
-        start_time = time.time()
-        test_methods = []
-        
-        # Generate tests for each test type defined in config
-        qualified_name = method.get_qualified_name()
-        
-        # Positive test
-        if "POSITIVE" in Config.TEST_TYPES:
-            test_methods.append(self._generate_positive_test(method))
-        
-        # Negative test
-        if "NEGATIVE" in Config.TEST_TYPES:
-            test_methods.append(self._generate_negative_test(method))
-        
-        # Edge case test
-        if "EDGE" in Config.TEST_TYPES:
-            test_methods.append(self._generate_edge_test(method))
-        
-        # Integration test (only if this method has dependencies)
-        if "INTEGRATION" in Config.TEST_TYPES and qualified_name in self.method_dependencies:
-            dependencies = self.method_dependencies[qualified_name]
-            if dependencies:
-                test_methods.append(self._generate_integration_test(method, dependencies))
-        
-        # Acceptance test (optional, for core business methods)
-        if "ACCEPTANCE" in Config.TEST_TYPES and self._is_business_method(method):
-            test_methods.append(self._generate_acceptance_test(method))
-        
-        # Record generation time
-        end_time = time.time()
-        self.method_generation_time[qualified_name] = end_time - start_time
-        
-        # Set initial coverage (simulation)
-        self.method_coverage[qualified_name] = 0.90  # Simulate initial coverage
-        
-        return test_methods
-    
-    def _is_business_method(self, method: JavaMethod) -> bool:
-        """
-        Heuristic to determine if a method is a core business method that warrants an acceptance test.
-        
-        Args:
-            method (JavaMethod): Method to check
-            
-        Returns:
-            bool: True if the method appears to be a core business method
-        """
-        # Consider methods with 'Service' in class name or specific business verbs
-        business_verbs = ['create', 'update', 'delete', 'process', 'calculate', 'validate', 'checkout', 'payment']
-        
-        if 'Service' in method.class_name or 'Facade' in method.class_name:
-            return True
-            
-        for verb in business_verbs:
-            if verb in method.method_name.lower():
-                return True
-                
-        return False
-    
-    def _generate_positive_test(self, method: JavaMethod) -> str:
-        """
-        Generate a positive test for a method.
-        
-        Args:
-            method (JavaMethod): Method to test
-            
-        Returns:
-            str: Test method content
-        """
-        return self._replace_template_placeholders(
-            get_positive_test_template(method.method_name, method.parameters, method.return_type),
-            method
-        )
-    
-    def _generate_negative_test(self, method: JavaMethod) -> str:
-        """
-        Generate a negative test for a method.
-        
-        Args:
-            method (JavaMethod): Method to test
-            
-        Returns:
-            str: Test method content
-        """
-        return self._replace_template_placeholders(
-            get_negative_test_template(method.method_name, method.parameters, method.return_type),
-            method
-        )
-    
-    def _generate_edge_test(self, method: JavaMethod) -> str:
-        """
-        Generate an edge case test for a method.
-        
-        Args:
-            method (JavaMethod): Method to test
-            
-        Returns:
-            str: Test method content
-        """
-        return self._replace_template_placeholders(
-            get_edge_test_template(method.method_name, method.parameters, method.return_type),
-            method
-        )
-    
-    def _generate_integration_test(self, method: JavaMethod, dependencies: List[str]) -> str:
-        """
-        Generate an integration test for a method.
-        
-        Args:
-            method (JavaMethod): Method to test
-            dependencies (List[str]): Dependencies of the method
-            
-        Returns:
-            str: Test method content
-        """
-        return self._replace_template_placeholders(
-            get_integration_test_template(
-                method.method_name, method.parameters, method.return_type, dependencies
-            ),
-            method
-        )
-    
-    def _generate_acceptance_test(self, method: JavaMethod) -> str:
-        """
-        Generate an acceptance test for a business method.
-        
-        Args:
-            method (JavaMethod): Method to test
-            
-        Returns:
-            str: Test method content
-        """
-        # Generate a business scenario description
-        scenario = self._generate_business_scenario(method)
-        
-        return self._replace_template_placeholders(
-            get_acceptance_test_template(method.method_name, scenario),
-            method
-        )
-    
-    def _generate_business_scenario(self, method: JavaMethod) -> str:
-        """
-        Generate a business scenario description based on the method name.
-        
-        Args:
-            method (JavaMethod): Method to describe
-            
-        Returns:
-            str: Business scenario description
-        """
-        # Convert camelCase to space-separated words
-        name_parts = re.findall(r'[A-Z]?[a-z]+', method.method_name)
-        readable_name = ' '.join(name_parts).lower()
-        
-        return f"{readable_name} completes successfully with valid data"
-    
-    def _replace_template_placeholders(self, template: str, method: JavaMethod) -> str:
-        """
-        Replace placeholders in a template with actual values.
-        
-        Args:
-            template (str): Template string
-            method (JavaMethod): Method being tested
-            
-        Returns:
-            str: Filled template
-        """
-        # Here we could add more sophisticated placeholder replacement
-        # For now, the templates are already parameterized with f-strings
-        return template
-    
-    def _get_output_path(self, package_name: str) -> str:
-        """
-        Get the output path for a test class based on its package.
-        
-        Args:
-            package_name (str): Package name
-            
-        Returns:
-            str: Output directory path
-        """
-        # Convert package to path
-        package_path = package_name.replace('.', os.sep)
-        return os.path.join(self.output_dir, package_path)
-    
-    def check_and_improve_coverage(self, min_coverage: float = 0.90) -> Dict[str, float]:
-        """
-        Check test coverage and generate additional tests as needed.
-        
-        Args:
-            min_coverage (float): Minimum required coverage (0.0-1.0)
-            
-        Returns:
-            Dict[str, float]: Updated coverage by method
-        """
-        # In a real implementation, this would analyze actual coverage results
-        # and improve test generation for methods with insufficient coverage
-        
-        print(f"Checking and improving test coverage (minimum: {min_coverage*100}%)...")
-        
-        # Identify methods with less than required coverage
-        low_coverage_methods = [
-            method for method in self.methods
-            if method.get_qualified_name() in self.method_coverage
-            and self.method_coverage[method.get_qualified_name()] < min_coverage
-        ]
-        
-        if not low_coverage_methods:
-            print("All methods have sufficient coverage.")
-            return self.method_coverage
-        
-        print(f"Improving coverage for {len(low_coverage_methods)} methods...")
-        
-        # Generate additional tests for methods with low coverage
-        for method in low_coverage_methods:
-            qualified_name = method.get_qualified_name()
-            print(f"Generating additional tests for method {qualified_name}")
-            
-            # Generate additional tests
-            additional_test = self._generate_additional_test(method)
-            
-            # Add to test class
-            self._add_test_to_class(method, additional_test)
-            
-            # Update simulated coverage
-            self.method_coverage[qualified_name] = min(1.0, self.method_coverage[qualified_name] + 0.1)
-        
-        return self.method_coverage
-    
-    def _generate_additional_test(self, method: JavaMethod) -> str:
-        """
-        Generate an additional test for a method with low coverage.
-        
-        Args:
-            method (JavaMethod): Method to test
-            
-        Returns:
-            str: Additional test method
-        """
-        # This would be more sophisticated in a real implementation,
-        # focusing on uncovered branches or conditions
-        
-        return f"""
-    @Test
-    @DisplayName("Additional test to improve coverage for {method.method_name}")
-    public void testAdditional{method.method_name.capitalize()}() {{
-        // [MR4, SR4] - Additional test to improve coverage
-        // [M1, M2, M3, M4, M5] - Coverage, correctness, time, pass rate, standards
-        
-        // Arrange
-        // TODO: Set up test data to cover missed branches
-        
-        // Act
-        // TODO: Call the method with inputs targeting uncovered branches
-        
-        // Assert
-        // TODO: Verify the expected behavior
-    }}
-"""
-    
-    def _add_test_to_class(self, method: JavaMethod, test_method: str) -> None:
-        """
-        Add a new test method to an existing test class file.
-        
-        Args:
-            method (JavaMethod): Method being tested
-            test_method (str): New test method content
-        """
-        package_name = method.package_name
-        output_path = self._get_output_path(package_name)
-        test_class_file = os.path.join(output_path, f"Test{method.class_name}.java")
-        
-        if not os.path.exists(test_class_file):
-            print(f"Warning: Test class file {test_class_file} not found. Cannot add additional test.")
-            return
-        
-        # Read existing file
-        with open(test_class_file, 'r') as f:
+    def _parse_java_file(self, source_file: str) -> Tuple[str, str, Dict[str, str]]:
+        """Parse a Java file and return its class name, package name, and methods."""
+        with open(source_file, 'r') as f:
             content = f.read()
         
-        # Find the closing brace of the class
-        last_brace_pos = content.rfind('}')
-        if last_brace_pos == -1:
-            print(f"Warning: Could not find class closing brace in {test_class_file}")
-            return
+        # Extract methods
+        methods = self._extract_methods(content)
+        if not methods:
+            return '', '', {}
         
-        # Insert the new test method before the closing brace
-        new_content = content[:last_brace_pos] + test_method + content[last_brace_pos:]
+        # Get class name from first method
+        class_name = methods[0].get('class_name', '')
+        if not class_name:
+            return '', '', {}
         
-        # Write back to file
-        with open(test_class_file, 'w') as f:
-            f.write(new_content)
+        # Get package name
+        package_name = self._get_package_name(source_file)
+        
+        # Convert methods list to dictionary
+        method_dict = {}
+        for method in methods:
+            method_name = method.get('name', '')
+            if method_name:
+                method_dict[method_name] = method.get('body', '')
+        
+        return class_name, package_name, method_dict
 
-    def generate_test_class(self, class_info: Dict) -> str:
-        """
-        Generate a complete test class for the given Java class info.
+    def _generate_test_class(self, class_name: str, package_name: str, test_cases: List[str], test_file_path: str) -> None:
+        """Generate the test class file."""
+        test_dir = os.path.join(os.path.dirname(test_file_path), 'test')
+        os.makedirs(test_dir, exist_ok=True)
         
-        Args:
-            class_info (Dict): Dictionary containing class information
-            
-        Returns:
-            str: Generated test class code
-        """
-        test_methods = []
-        for method in class_info["methods"]:
-            # Generate tests for each method
-            positive_test = self._generate_test_method(method, "POSITIVE")
-            negative_test = self._generate_test_method(method, "NEGATIVE")
-            edge_test = self._generate_test_method(method, "EDGE")
-            test_methods.extend([positive_test, negative_test, edge_test])
-            
-            # Add integration test if method is public and has parameters
-            if "public" in method.modifiers and method.parameters:
-                integration_test = self._generate_test_method(method, "INTEGRATION")
-                test_methods.append(integration_test)
+        test_file_path = os.path.join(test_dir, f"{class_name}Test.java")
         
-        # Format the complete test class
-        test_class_code = self.templates.format_test_class(
-            package=class_info["package"],
-            class_name=f"{class_info['class_name']}Test",
-            imports=self._get_required_imports(class_info),
-            setup=self._generate_setup(class_info),
-            test_methods="\n".join(test_methods),
-            timestamp=time.strftime("%Y-%m-%d %H:%M:%S")
+        template = self.test_model.get_test_class_template(
+            package_name=f"{package_name}.test",
+            class_name=class_name,
+            test_cases=test_cases
         )
         
-        return test_class_code
-    
-    def _generate_test_method(self, method: MethodInfo, test_type: str) -> str:
-        """
-        Generate a test method for a given method and test type.
+        with open(test_file_path, 'w') as f:
+            f.write(template)
         
-        Args:
-            method (MethodInfo): Method information
-            test_type (str): Type of test to generate
-            
-        Returns:
-            str: Generated test method code
-        """
-        description = f"{test_type} test for method {method.name}"
-        requirements = f"// [MR1, SR1] - Testing {method.name} with {test_type} inputs"
-        metrics = f"// [M1, M2, M3, M4, M5] - Coverage, correctness, generation time, pass rate, and standards"
-        
-        # Generate method body based on test type
-        method_body = self._generate_method_body(method, test_type)
-        
-        return self.templates.format_test_method(
-            method_name=f"test{method.name.capitalize()}{test_type.capitalize()}",
-            description=description,
-            requirements=requirements,
-            metrics=metrics,
-            method_body=method_body
-        )
-    
-    def _generate_method_body(self, method: MethodInfo, test_type: str) -> str:
-        """
-        Generate the body of a test method.
-        
-        Args:
-            method (MethodInfo): Method information
-            test_type (str): Type of test to generate
-            
-        Returns:
-            str: Generated method body
-        """
-        # This is where you would integrate with your AI model
-        # For now, we'll return a simple placeholder
-        if test_type == "POSITIVE":
-            return f"""
-        // Test {method.name} with valid inputs
-        // TODO: Replace with actual test implementation
-        assertNotNull(instance);"""
-        elif test_type == "NEGATIVE":
-            return f"""
-        // Test {method.name} with invalid inputs
-        // TODO: Replace with actual test implementation
-        assertThrows(IllegalArgumentException.class, () -> {{
-            // Add test code here
-        }});"""
-        elif test_type == "EDGE":
-            return f"""
-        // Test {method.name} with boundary conditions
-        // TODO: Replace with actual test implementation
-        assertNotNull(instance);"""
-        else:  # INTEGRATION
-            return f"""
-        // Test {method.name} integration with other components
-        // TODO: Replace with actual test implementation
-        assertNotNull(instance);"""
-    
-    def _generate_setup(self, class_info: Dict) -> str:
-        """
-        Generate the setup method for the test class.
-        
-        Args:
-            class_info (Dict): Class information
-            
-        Returns:
-            str: Generated setup method
-        """
-        return f"""
-    @BeforeEach
-    void setUp() {{
-        // [MR1, SR1] - Setup for testing {class_info['class_name']}
-        // [M5] - Ensuring compliance with Java testing standards
-        instance = new {class_info['class_name']}();
-    }}"""
-    
-    def _get_required_imports(self, class_info: Dict) -> str:
-        """
-        Get the required import statements for the test class.
-        
-        Args:
-            class_info (Dict): Class information
-            
-        Returns:
-            str: Import statements
-        """
-        imports = [
-            f"package {class_info['package']};" if class_info["package"] else "",
-            "import org.junit.jupiter.api.BeforeEach;",
-            "import org.junit.jupiter.api.Test;",
-            "import static org.junit.jupiter.api.Assertions.*;",
-            f"import {class_info['package']}.{class_info['class_name']};"
-        ]
-        return "\n".join(imports)
+        logging.info(f"Generated test class: {test_file_path}")
 
-
-def generate_tests(methods: List[JavaMethod], output_dir: str) -> Dict[str, Dict]:
-    """
-    Generate tests for all methods and continuously improve coverage.
-    This is the main function to be used by other modules.
-    
-    Args:
-        methods (List[JavaMethod]): List of methods to test
-        output_dir (str): Output directory for test files
+def main():
+    """Main entry point."""
+    if len(sys.argv) < 2:
+        print("Usage: python test_generator.py <source_file>")
+        sys.exit(1)
         
-    Returns:
-        Dict[str, Dict]: Test generation report
-    """
-    # Create test generator
-    generator = TestGenerator(methods, output_dir)
+    source_file = sys.argv[1]
+    generator = TestGenerator()
     
-    # First round of test generation
-    print("=== First round of test generation ===")
-    report = generator.generate_all_tests()
+    report = generator.generate_all_tests([source_file])
     
-    # Iteratively improve coverage
-    print("\n=== Improving test coverage ===")
-    iterations = 0
-    min_coverage = Config.REQUIRED_COVERAGE
-    
-    while iterations < 3:  # Limit iterations to avoid infinite loop
-        iterations += 1
-        print(f"Coverage improvement iteration {iterations}")
-        
-        # Check and improve coverage
-        updated_coverage = generator.check_and_improve_coverage(min_coverage)
-        
-        # Check if all methods have sufficient coverage
-        low_coverage_count = sum(1 for cov in updated_coverage.values() if cov < min_coverage)
-        if low_coverage_count == 0:
-            print("All methods have reached the required coverage threshold.")
-            break
-            
-        print(f"{low_coverage_count} methods still below {min_coverage*100}% coverage threshold.")
-    
-    # Update the report with final coverage data
-    report["final_method_coverage"] = generator.method_coverage
-    report["coverage_improvement_iterations"] = iterations
-    
-    return report 
+    logging.info("\nTest Generation Report:")
+    logging.info(f"Total methods processed: {report['total_methods']}")
+    logging.info(f"Total tests generated: {report['total_tests']}")
+    logging.info(f"Total generation time: {report['total_time']:.2f} seconds")
+    logging.info(f"Average time per method: {report['avg_time']:.2f} seconds") 

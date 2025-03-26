@@ -41,6 +41,23 @@ def get_test_class_template(class_name):
 
 /**
  * Test class for {class_name}
+ * Generated using standardized test generation template
+ * 
+ * Template structure:
+ * 1. Setup and initialization
+ * 2. Method-specific test groups:
+ *    - Positive tests (valid inputs, expected behavior)
+ *    - Negative tests (invalid inputs, error handling)
+ *    - Edge tests (boundary conditions)
+ *    - Integration tests (if applicable)
+ * 3. Documentation and requirement mapping
+ * 
+ * [MR1, SR1] - Testing {class_name} functionality
+ * [M1] - Method coverage
+ * [M2] - Assertion coverage
+ * [M3] - Edge case coverage
+ * [M4] - Boundary testing
+ * [M5] - Error handling and standards compliance
  */
 public class Test{class_name} {{
     
@@ -50,6 +67,7 @@ public class Test{class_name} {{
     @BeforeEach
     public void setUp() {{
         MockitoAnnotations.openMocks(this);
+        // Additional setup code will be added here
     }}
     
     @AfterEach
@@ -75,19 +93,21 @@ def get_positive_test_template(method_name, parameters, return_type):
         str: Template for a positive test method
     """
     return f"""
+    /**
+     * POSITIVE test for method {method_name}
+     * [MR1, SR1] - Testing {method_name} with valid inputs
+     * [M1, M2] - Coverage and correctness
+     */
     @Test
     @DisplayName("Test {method_name} with valid input")
-    public void test{method_name.capitalize()}ValidInput() {{
-        // [MR1, SR1] - Testing method with valid inputs
-        // [M1, M2, M3, M4, M5] - Coverage, correctness, time, pass rate, standards
-        
-        // Arrange
+    public void test{method_name.capitalize()}Positive() {{
+        // 1. Setup test data
         // TODO: Set up test data
         
-        // Act
+        // 2. Execute method
         // TODO: Call the method with valid inputs
         
-        // Assert
+        // 3. Verify results
         // TODO: Verify the expected outcome
     }}
 """
@@ -106,19 +126,24 @@ def get_negative_test_template(method_name, parameters, return_type):
         str: Template for a negative test method
     """
     return f"""
+    /**
+     * NEGATIVE test for method {method_name}
+     * [MR1] - Testing error conditions
+     * [M2, M5] - Error handling
+     */
     @Test
     @DisplayName("Test {method_name} with invalid input")
-    public void test{method_name.capitalize()}InvalidInput() {{
-        // [MR2, SR2] - Testing method with invalid inputs
-        // [M1, M2, M3, M4, M5] - Coverage, correctness, time, pass rate, standards
-        
-        // Arrange
+    public void test{method_name.capitalize()}Negative() {{
+        // 1. Setup invalid test data
         // TODO: Set up invalid test data
         
-        // Act & Assert
+        // 2. Execute method and verify error handling
         assertThrows(Exception.class, () -> {{
             // TODO: Call the method with invalid inputs
         }});
+        
+        // 3. Verify error handling
+        // TODO: Verify error handling behavior
     }}
 """
 
@@ -136,19 +161,21 @@ def get_edge_test_template(method_name, parameters, return_type):
         str: Template for an edge case test method
     """
     return f"""
+    /**
+     * EDGE test for method {method_name}
+     * [MR1] - Testing boundary conditions
+     * [M3, M4] - Edge cases and boundaries
+     */
     @Test
     @DisplayName("Test {method_name} with boundary values")
-    public void test{method_name.capitalize()}BoundaryValues() {{
-        // [MR3, SR3] - Testing method with boundary values
-        // [M1, M2, M3, M4, M5] - Coverage, correctness, time, pass rate, standards
-        
-        // Arrange
+    public void test{method_name.capitalize()}Edge() {{
+        // 1. Setup boundary conditions
         // TODO: Set up boundary test data
         
-        // Act
+        // 2. Execute method with boundary values
         // TODO: Call the method with boundary values
         
-        // Assert
+        // 3. Verify boundary handling
         // TODO: Verify the expected outcome for boundary conditions
     }}
 """
@@ -168,19 +195,21 @@ def get_integration_test_template(method_name, parameters, return_type, dependen
         str: Template for an integration test method
     """
     return f"""
+    /**
+     * INTEGRATION test for method {method_name}
+     * [CR1] - Testing integration with dependencies
+     * [M1, M2] - Coverage and correctness
+     */
     @Test
     @DisplayName("Integration test for {method_name}")
     public void test{method_name.capitalize()}Integration() {{
-        // [CR1] - Testing integration with other components
-        // [M1, M2, M3, M4, M5] - Coverage, correctness, time, pass rate, standards
-        
-        // Arrange
+        // 1. Setup test data and mocks
         // TODO: Set up test data and configure mocks for dependencies
         
-        // Act
+        // 2. Execute integrated workflow
         // TODO: Call the method that interacts with dependencies
         
-        // Assert
+        // 3. Verify interactions
         // TODO: Verify the expected outcome and interactions
     }}
 """
@@ -198,19 +227,21 @@ def get_acceptance_test_template(method_name, use_case_description):
         str: Template for an acceptance test method
     """
     return f"""
+    /**
+     * ACCEPTANCE test for method {method_name}
+     * [CR2] - Testing end-to-end scenario: {use_case_description}
+     * [M1, M2] - Coverage and correctness
+     */
     @Test
     @DisplayName("Acceptance test: {use_case_description}")
     public void test{method_name.capitalize()}Acceptance() {{
-        // [CR2] - Testing end-to-end scenario: {use_case_description}
-        // [M1, M2, M3, M4, M5] - Coverage, correctness, time, pass rate, standards
-        
-        // Arrange
+        // 1. Setup scenario
         // TODO: Set up test data for the full scenario
         
-        // Act
+        // 2. Execute workflow
         // TODO: Execute the full scenario/workflow
         
-        // Assert
+        // 3. Verify end-to-end outcome
         // TODO: Verify the expected end-to-end outcome
     }}
 """
@@ -221,11 +252,30 @@ class TestTemplates:
         """
         Format the full test class using the provided parameters.
         """
-        template = f"""{imports}
+        template = f"""package {package};
+
+{imports}
 
 /**
  * Test class for {class_name.replace("Test", "")}
+ * Generated using standardized test generation template
  * Generated on {timestamp}
+ * 
+ * Template structure:
+ * 1. Setup and initialization
+ * 2. Method-specific test groups:
+ *    - Positive tests (valid inputs, expected behavior)
+ *    - Negative tests (invalid inputs, error handling)
+ *    - Edge tests (boundary conditions)
+ *    - Integration tests (if applicable)
+ * 3. Documentation and requirement mapping
+ * 
+ * [MR1, SR1] - Testing {class_name.replace("Test", "")} functionality
+ * [M1] - Method coverage
+ * [M2] - Assertion coverage
+ * [M3] - Edge case coverage
+ * [M4] - Boundary testing
+ * [M5] - Error handling and standards compliance
  */
 public class {class_name} {{
     private {class_name.replace("Test", "")} instance;
@@ -248,8 +298,14 @@ public class {class_name} {{
      * {metrics}
      */
     @Test
+    @DisplayName("{description}")
     public void {method_name}() {{
+        // 1. Setup
         {method_body}
+        
+        // 2. Execute
+        
+        // 3. Verify
     }}
 """
         return template 
