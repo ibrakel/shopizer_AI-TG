@@ -33,3 +33,6 @@ debug_output/
 *.pyc
 .mvnw/*.jar
 **/coverage-reports/
+.env
+*.pyc
+debug_output/
