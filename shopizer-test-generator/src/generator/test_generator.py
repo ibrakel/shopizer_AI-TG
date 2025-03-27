@@ -11,7 +11,7 @@ from typing import List, Dict, Tuple, Optional, Set, Union, Any
 import datetime
 from ..models.test_to_code_model import TestToCodeModel
 from ..utils.file_utils import get_package_name, get_test_file_path, ensure_directory
-from ..utils.java_parser import JavaMethodParser
+from ..parser.java_parser import JavaParser
 
 
 class TestGenerator:
@@ -32,7 +32,7 @@ class TestGenerator:
         self.test_dir = test_dir
         self.coverage_threshold = coverage_threshold
         self.test_model = TestToCodeModel()
-        self.parser = JavaMethodParser()
+        self.parser = JavaParser()
         
         # Track generation metrics
         self.tested_methods: Set[str] = set()
@@ -373,13 +373,96 @@ class TestGenerator:
         
         return template
 
-    def generate_all_tests(self, source_files: List[str], max_iterations: int = 3) -> Dict[str, Any]:
+    def _generate_method_tests(self, method: 'JavaMethod') -> List[str]:
         """
-        Generate tests for all source files with coverage-based iteration.
+        Generate test cases for a single method.
+        
+        Args:
+            method (JavaMethod): Method to generate tests for
+            
+        Returns:
+            List[str]: List of generated test cases
+        """
+        try:
+            # Convert JavaMethod to dictionary format
+            method_info = {
+                'name': method.method_name,
+                'class_name': method.class_name,
+                'package': method.package_name,
+                'return_type': method.return_type,
+                'parameters': [f"{ptype} {pname}" for ptype, pname in method.parameters],
+                'body': method.body,
+                'is_static': method.is_static,
+                'access_modifier': method.access_modifier,
+                'exceptions': method.exceptions
+            }
+            
+            # Generate test cases using the test model
+            test_cases = self.test_model.generate_test_cases(method_info)
+            
+            # Track the generated tests
+            if test_cases:
+                method_key = method.get_qualified_name()
+                if method_key not in self.generated_tests:
+                    self.generated_tests[method_key] = set()
+                self.generated_tests[method_key].update(test_cases)
+                
+            return test_cases
+            
+        except Exception as e:
+            logging.error(f"Error generating tests for method {method.method_name}: {str(e)}")
+            return []
+
+    def _extract_method_body(self, content: str, line_number: int) -> str:
+        """
+        Extract method body from source code.
+        
+        Args:
+            content (str): Source file content
+            line_number (int): Line number where the method starts
+            
+        Returns:
+            str: Method body
+        """
+        try:
+            lines = content.splitlines()
+            if line_number > len(lines):
+                return ""
+                
+            # Find method start (opening brace)
+            start_line = line_number - 1
+            while start_line < len(lines) and '{' not in lines[start_line]:
+                start_line += 1
+                
+            if start_line >= len(lines):
+                return ""
+                
+            # Find method end (matching closing brace)
+            brace_count = 0
+            end_line = start_line
+            
+            for i in range(start_line, len(lines)):
+                line = lines[i]
+                brace_count += line.count('{') - line.count('}')
+                
+                if brace_count == 0:
+                    end_line = i
+                    break
+                    
+            # Extract and return the method body
+            body_lines = lines[start_line:end_line + 1]
+            return '\n'.join(body_lines)
+            
+        except Exception as e:
+            logging.error(f"Error extracting method body: {str(e)}")
+            return ""
+
+    def generate_all_tests(self, source_files: List[str]) -> Dict[str, Any]:
+        """
+        Generate tests for all methods in the given source files.
         
         Args:
             source_files (List[str]): List of source files to process
-            max_iterations (int): Maximum number of iterations for coverage improvement
             
         Returns:
             Dict[str, Any]: Generation report
@@ -388,89 +471,68 @@ class TestGenerator:
         total_methods = 0
         tests_generated = 0
         
+        logging.info(f"Found {len(source_files)} Java files")
+        
         for source_file in source_files:
-            logging.info(f"\nProcessing file: {source_file}")
-            
             try:
-                # Parse the source file
-                with open(source_file, 'r') as f:
-                    source_code = f.read()
-                    
-                class_name = os.path.splitext(os.path.basename(source_file))[0]
-                package_name = self._get_package_name(source_file)
+                logging.info(f"\nProcessing file: {source_file}")
                 
-                # Extract methods from source
-                methods = self.parser.extract_methods(source_code)
-                total_methods += len(methods)
+                # Parse the file
+                self.parser._parse_file(source_file)
+                methods = self.parser.methods
                 
-                # Generate initial tests
+                if not methods:
+                    logging.warning("No methods found after parsing source file")
+                    continue
+                
+                # Get class and package names from the first method
+                class_name = methods[0].class_name
+                package_name = methods[0].package_name
+                
+                # Generate tests for each method
                 test_cases = []
                 for method in methods:
-                    method_tests = self.test_model.generate_test_cases(method)
-                    test_cases.extend(method_tests)
-                    tests_generated += len(method_tests)
+                    total_methods += 1
+                    
+                    # Get method body if not already present
+                    if not method.body:
+                        with open(source_file, 'r') as f:
+                            content = f.read()
+                            method.body = self._extract_method_body(content, method.line_number)
+                    
+                    # Generate test cases
+                    method_tests = self._generate_method_tests(method)
+                    if method_tests:
+                        test_cases.extend(method_tests)
+                        tests_generated += len(method_tests)
+                    else:
+                        logging.warning(f"No tests generated for method: {method.method_name}")
                 
-                # Generate test class
-                test_file = self._generate_test_class(class_name, package_name, test_cases, source_file)
-                
-                # Iterative coverage improvement
-                iteration = 1
-                while iteration <= max_iterations:
-                    # Run tests and get coverage
-                    coverage_data = self.run_jacoco_analysis(test_file)
+                if test_cases:
+                    # Generate test class file
+                    test_file = self._generate_test_class(class_name, package_name, test_cases, source_file)
                     
-                    # Check if all methods meet coverage threshold
-                    uncovered_methods = []
-                    for method in methods:
-                        method_name = f"{package_name}.{class_name}.{method['name']}"
-                        coverage = coverage_data.get(method_name, 0.0)
-                        self.method_coverage[method_name] = coverage
-                        
-                        if coverage < self.coverage_threshold:
-                            uncovered_methods.append(method)
-                    
-                    if not uncovered_methods:
-                        logging.info(f"All methods meet coverage threshold after {iteration} iterations")
-                        break
-                        
-                    if iteration == max_iterations:
-                        logging.warning(f"Maximum iterations reached. Some methods still below threshold:")
-                        for method in uncovered_methods:
-                            logging.warning(f"  - {method['name']}: {self.method_coverage.get(method['name'], 0.0)*100:.1f}%")
-                        break
-                    
-                    # Generate additional tests for uncovered methods
-                    logging.info(f"\nIteration {iteration + 1}: Generating additional tests for {len(uncovered_methods)} methods")
-                    additional_tests = []
-                    for method in uncovered_methods:
-                        new_tests = self.test_model.generate_test_cases(method)
-                        additional_tests.extend(new_tests)
-                        tests_generated += len(new_tests)
-                    
-                    # Update test class with new tests
-                    test_cases.extend(additional_tests)
-                    self._generate_test_class(class_name, package_name, test_cases, source_file)
-                    
-                    iteration += 1
+                    # Run coverage analysis
+                    coverage = self.run_jacoco_analysis(test_file)
+                    self.method_coverage.update(coverage)
+                else:
+                    logging.warning(f"No tests generated for file: {source_file}")
                     
             except Exception as e:
                 logging.error(f"Error processing file {source_file}: {str(e)}")
-                if logging.getLogger().level == logging.DEBUG:
-                    import traceback
-                    traceback.print_exc()
                 continue
         
-        # Generate report
+        # Calculate metrics
         total_time = time.time() - start_time
-        report = {
-            'total_methods': total_methods,
-            'tests_generated': tests_generated,
-            'total_time': total_time,
-            'avg_time_per_method': total_time / total_methods if total_methods > 0 else 0,
-            'method_coverage': self.method_coverage
-        }
+        avg_time = total_time / total_methods if total_methods > 0 else 0
         
-        return report
+        return {
+            "total_methods": total_methods,
+            "tests_generated": tests_generated,
+            "total_time": total_time,
+            "avg_time_per_method": avg_time,
+            "method_coverage": self.method_coverage
+        }
 
 def main():
     """Main entry point."""

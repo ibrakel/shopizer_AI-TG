@@ -5,7 +5,7 @@ This module provides functionality to generate test cases from source code.
 
 import os
 import requests
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 import logging
 import re
 import datetime
@@ -337,18 +337,22 @@ IMPORTANT:
             logging.error(f"Error during test code validation: {str(e)}")
             return False
 
-    def generate_test_cases(self, method_code: str) -> List[str]:
+    def generate_test_cases(self, method_info: Union[str, Dict]) -> List[str]:
         """
         Generate test cases for a given method.
         
         Args:
-            method_code (str): Source code of the method to test
+            method_info (Union[str, Dict]): Either the source code of the method to test
+                                          or a dictionary containing method information
             
         Returns:
             List[str]: Generated test cases (positive, negative, edge)
         """
         test_cases = []
-        method_info = self._extract_method_info(method_code)
+        
+        # Convert string to method info dictionary if needed
+        if isinstance(method_info, str):
+            method_info = self._extract_method_info(method_info)
         
         if not method_info:
             logging.warning("Could not extract method information")
