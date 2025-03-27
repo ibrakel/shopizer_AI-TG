@@ -40,24 +40,37 @@ def main():
         sys.exit(1)
 
     try:
-        # Validate source directory
+        # Validate source directory or file
         source_dir = validate_path(args.source_dir)
         if not source_dir:
-            logging.error(f"Invalid source directory: {args.source_dir}")
+            logging.error(f"Invalid source directory or file: {args.source_dir}")
             sys.exit(1)
+            
+        # If the source is a single file, not a directory
+        is_single_file = os.path.isfile(args.source_dir)
+        if is_single_file:
+            source_dir = os.path.dirname(args.source_dir)
+            logging.info(f"Processing single file: {args.source_dir}")
+        else:
+            logging.info(f"Processing directory: {source_dir}")
 
         # Set up test directory
         test_dir = setup_test_paths(source_dir, args.test_dir)
         if not test_dir:
             logging.error("Failed to set up test directory")
             sys.exit(1)
+            
+        logging.info(f"Test files will be generated in: {test_dir}")
 
         # Find Java source files
         java_files = []
-        for root, _, files in os.walk(source_dir):
-            for file in files:
-                if file.endswith(".java"):
-                    java_files.append(os.path.join(root, file))
+        if is_single_file:
+            java_files = [args.source_dir]
+        else:
+            for root, _, files in os.walk(source_dir):
+                for file in files:
+                    if file.endswith(".java"):
+                        java_files.append(os.path.join(root, file))
 
         if not java_files:
             logging.error(f"No Java files found in {source_dir}")

@@ -58,16 +58,14 @@ class JavaMethodParser:
             method_name = match.group(2)
             parameters_str = match.group(3)
 
-            # Parse parameters
+            # Parse parameters and convert to string format expected by the test generator
             parameters = []
             if parameters_str.strip():
                 for param_match in self.parameter_pattern.finditer(parameters_str):
                     param_type = param_match.group(1)
                     param_name = param_match.group(2)
-                    parameters.append({
-                        "type": param_type,
-                        "name": param_name
-                    })
+                    # Store as a string in the format "type name"
+                    parameters.append(f"{param_type} {param_name}")
 
             # Create method info dictionary
             method_info = {
@@ -115,7 +113,8 @@ class JavaMethodParser:
 
         # Add parameter types if they're classes
         for param in method_info["parameters"]:
-            param_type = param["type"]
+            # Extract type from "type name" format
+            param_type = param.split()[0] if param and ' ' in param else param
             if self._is_class_type(param_type):
                 dependencies.add(param_type)
 
