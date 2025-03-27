@@ -99,6 +99,9 @@ Important Java syntax rules:
 2. Every statement must end with a semicolon
 3. Use void for test method return type
 4. Include ONLY the body of a single test method, not the entire class
+5. For repository operations, ALWAYS use saveAndFlush() instead of save() when mocking repository methods
+   Example: when(repository.saveAndFlush(any())).thenReturn(entity);
+   Example: verify(repository).saveAndFlush(entity);
 
 Format your test method like this:
 ```java
@@ -126,6 +129,7 @@ IMPORTANT:
 - Use Mockito for mocking dependencies
 - Include meaningful assertions
 - Make sure all lines end with semicolons
+- When mocking repository operations, use saveAndFlush() instead of save()
 """
         return prompt
 

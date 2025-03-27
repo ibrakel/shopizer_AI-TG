@@ -8,6 +8,8 @@ import sys
 import argparse
 import logging
 from typing import List, Dict
+from pathlib import Path
+import datetime
 
 from src.generator.test_generator import TestGenerator
 from src.utils.file_utils import validate_path, setup_test_paths
@@ -21,15 +23,23 @@ def main():
     parser.add_argument("source_dir", help="Directory containing Java source files")
     parser.add_argument("--test-dir", help="Directory for generated test files", default=None)
     parser.add_argument("--api-key", help="OpenAI API key (or set OPENAI_API_KEY environment variable)", default=None)
+    parser.add_argument("--coverage-threshold", type=float, default=0.8,
+                      help="Minimum coverage threshold (0.0-1.0)")
+    parser.add_argument("--max-iterations", type=int, default=3,
+                      help="Maximum iterations for coverage improvement")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
+    parser.add_argument("--debug", "-d", action="store_true", help="Enable debug output")
     args = parser.parse_args()
 
     # Configure logging
-    log_level = logging.DEBUG if args.verbose else logging.INFO
+    log_level = logging.DEBUG if args.debug else (logging.INFO if args.verbose else logging.WARNING)
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[logging.StreamHandler()]
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler("test_generation.log")
+        ]
     )
 
     # Set OpenAI API key if provided
@@ -78,14 +88,16 @@ def main():
 
         logging.info(f"Found {len(java_files)} Java files")
 
-        # Initialize test generator
-        generator = TestGenerator(source_dir, test_dir)
+        # Initialize test generator with coverage threshold
+        generator = TestGenerator(source_dir, test_dir, args.coverage_threshold)
 
-        # Generate tests
-        report = generator.generate_all_tests(java_files)
+        # Generate tests with coverage-based iteration
+        report = generator.generate_all_tests(java_files, args.max_iterations)
 
-        # Print report
+        # Print detailed report
         logging.info("\nTest Generation Report:")
+        logging.info("-" * 50)
+        logging.info(f"Total files processed: {len(java_files)}")
         logging.info(f"Total methods processed: {report['total_methods']}")
         logging.info(f"Total tests generated: {report['tests_generated']}")
         logging.info(f"Total generation time: {report['total_time']:.2f} seconds")
@@ -93,14 +105,55 @@ def main():
 
         # Print coverage information
         logging.info("\nCoverage Report:")
+        logging.info("-" * 50)
+        below_threshold = []
         for method, coverage in report["method_coverage"].items():
-            logging.info(f"{method}: {coverage*100:.1f}%")
+            coverage_str = f"{coverage*100:.1f}%"
+            status = "✓" if coverage >= args.coverage_threshold else "✗"
+            logging.info(f"{status} {method}: {coverage_str}")
+            if coverage < args.coverage_threshold:
+                below_threshold.append((method, coverage))
 
+        if below_threshold:
+            logging.warning("\nMethods Below Coverage Threshold:")
+            logging.warning("-" * 50)
+            for method, coverage in below_threshold:
+                logging.warning(f"{method}: {coverage*100:.1f}% (threshold: {args.coverage_threshold*100}%)")
+
+        # Save report to file
+        report_file = os.path.join(test_dir, "test_generation_report.txt")
+        with open(report_file, "w") as f:
+            f.write("Test Generation Report\n")
+            f.write("=" * 50 + "\n\n")
+            f.write(f"Generated on: {datetime.datetime.now()}\n")
+            f.write(f"Source directory: {source_dir}\n")
+            f.write(f"Test directory: {test_dir}\n")
+            f.write(f"Coverage threshold: {args.coverage_threshold*100}%\n")
+            f.write(f"Maximum iterations: {args.max_iterations}\n\n")
+            
+            f.write("Summary\n")
+            f.write("-" * 50 + "\n")
+            f.write(f"Total files processed: {len(java_files)}\n")
+            f.write(f"Total methods processed: {report['total_methods']}\n")
+            f.write(f"Total tests generated: {report['tests_generated']}\n")
+            f.write(f"Total generation time: {report['total_time']:.2f} seconds\n")
+            f.write(f"Average time per method: {report['avg_time_per_method']:.2f} seconds\n\n")
+            
+            f.write("Coverage Details\n")
+            f.write("-" * 50 + "\n")
+            for method, coverage in sorted(report["method_coverage"].items()):
+                status = "PASS" if coverage >= args.coverage_threshold else "FAIL"
+                f.write(f"{status}: {method}: {coverage*100:.1f}%\n")
+
+        logging.info(f"\nDetailed report saved to: {report_file}")
         logging.info("\nTest generation completed successfully")
 
+    except KeyboardInterrupt:
+        logging.info("\nTest generation interrupted by user")
+        sys.exit(1)
     except Exception as e:
         logging.error(f"Error during test generation: {str(e)}")
-        if args.verbose:
+        if args.debug:
             logging.exception("Detailed error information:")
         sys.exit(1)
 

@@ -97,18 +97,23 @@ def get_positive_test_template(method_name, parameters, return_type):
      * POSITIVE test for method {method_name}
      * [MR1, SR1] - Testing {method_name} with valid inputs
      * [M1, M2] - Coverage and correctness
+     * 
+     * Note: For repository operations, always use saveAndFlush() instead of save()
+     * Example: when(repository.saveAndFlush(any())).thenReturn(entity);
      */
     @Test
     @DisplayName("Test {method_name} with valid input")
     public void test{method_name.capitalize()}Positive() {{
         // 1. Setup test data
-        // TODO: Set up test data
+        // Example repository mock:
+        // when(repository.saveAndFlush(any())).thenReturn(entity);
         
         // 2. Execute method
         // TODO: Call the method with valid inputs
         
         // 3. Verify results
-        // TODO: Verify the expected outcome
+        // Example repository verification:
+        // verify(repository).saveAndFlush(entity);
     }}
 """
 
