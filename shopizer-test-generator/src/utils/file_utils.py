@@ -3,66 +3,77 @@ File utilities for path validation and setup.
 """
 
 import os
-from typing import Optional
+import sys
+from pathlib import Path
+from typing import Optional, List, Dict
+import logging
 
 
 def validate_path(path: str) -> Optional[str]:
     """
-    Validate if a path exists and is accessible.
+    Validate that a path exists and is readable.
     
     Args:
         path (str): Path to validate
         
     Returns:
-        Optional[str]: Absolute path if valid, None otherwise
+        Optional[str]: Validated path, or None if invalid
     """
     if not path:
         return None
         
-    abs_path = os.path.abspath(path)
-    if not os.path.exists(abs_path):
+    path = os.path.abspath(path)
+    if not os.path.exists(path):
         return None
         
-    try:
-        # Check if path is readable
-        if os.path.isfile(abs_path):
-            with open(abs_path, 'r') as _:
-                pass
-        else:
-            os.listdir(abs_path)
-        return abs_path
-    except (IOError, OSError):
-        return None
+    if not os.path.isdir(path):
+        path = os.path.dirname(path)
+        
+    return path
 
 
 def setup_test_paths(source_dir: str, test_dir: Optional[str] = None) -> Optional[str]:
     """
-    Set up test directory paths based on source directory.
+    Set up test directory based on source directory.
     
     Args:
-        source_dir (str): Source directory path
-        test_dir (Optional[str]): Optional test directory path
+        source_dir (str): Source directory
+        test_dir (Optional[str]): Optional test directory override
         
     Returns:
-        Optional[str]: Test directory path if setup successful, None otherwise
+        Optional[str]: Test directory path, or None if setup failed
     """
-    if not source_dir:
-        return None
-        
-    # If test directory not specified, create parallel to source
-    if not test_dir:
-        source_parent = os.path.dirname(source_dir)
-        test_dir = os.path.join(source_parent, "test")
-    
-    # Create test directory if it doesn't exist
     try:
+        if test_dir:
+            # Use provided test directory
+            test_dir = os.path.abspath(test_dir)
+        else:
+            # Default: create test directory parallel to source
+            source_path = Path(source_dir)
+            source_parts = list(source_path.parts)
+            
+            # Check if this is a Maven-style project with main/java directory structure
+            if "main" in source_parts and "java" in source_parts:
+                # For Maven structure, replace 'main' with 'test' but keep the rest of the path
+                main_index = source_parts.index("main")
+                source_parts[main_index] = "test"
+                test_dir = os.path.join(*source_parts)
+                logging.info(f"Detected Maven structure. Test directory: {test_dir}")
+            else:
+                # Create test directory alongside source (non-Maven structure)
+                test_dir = os.path.join(os.path.dirname(source_dir), "test")
+                logging.info(f"Non-Maven structure. Test directory: {test_dir}")
+        
+        # Create test directory if it doesn't exist
         os.makedirs(test_dir, exist_ok=True)
+        logging.info(f"Test directory set up at: {test_dir}")
         return test_dir
-    except OSError:
+    except OSError as e:
+        logging.error(f"Failed to set up test directory: {str(e)}")
         return None
 
 
-def get_java_files(directory: str) -> list[str]:
+def get_java_files(directory: str) -> List[str]:
     """
     Get all Java files in a directory recursively.
     
@@ -70,7 +81,7 @@ def get_java_files(directory: str) -> list[str]:
         directory (str): Directory to search
         
     Returns:
-        list[str]: List of Java file paths
+        List[str]: List of Java file paths
     """
     java_files = []
     for root, _, files in os.walk(directory):
@@ -91,13 +102,32 @@ def get_test_file_path(source_file: str, test_dir: str) -> str:
     Returns:
         str: Test file path
     """
-    # Get relative path from source root
-    source_root = os.path.dirname(os.path.dirname(source_file))
-    relative_path = os.path.relpath(source_file, source_root)
+    # Parse source file path
+    source_parts = Path(source_file).parts
     
-    # Create test file path
-    test_file = relative_path.replace(".java", "Test.java")
-    return os.path.join(test_dir, test_file)
+    # For Maven structure, maintain package hierarchy but change main to test
+    if "main" in source_parts and "java" in source_parts:
+        # Get the parts after "java" directory
+        java_index = source_parts.index("java")
+        package_path = os.path.join(*source_parts[java_index + 1:-1])
+        
+        # Get the filename and add Test suffix
+        filename = source_parts[-1]
+        base_name = os.path.splitext(filename)[0]
+        test_filename = f"{base_name}Test.java"
+        
+        # Create full test path - make sure we don't duplicate the package path
+        test_file_path = os.path.join(test_dir, package_path, test_filename)
+        
+        # Log the test file path for debugging
+        logging.debug(f"Source file: {source_file}")
+        logging.debug(f"Test file path: {test_file_path}")
+        
+        return test_file_path
+    else:
+        # For non-Maven structure, just replace the file extension
+        base_name = os.path.splitext(os.path.basename(source_file))[0]
+        return os.path.join(test_dir, f"{base_name}Test.java")
 
 
 def ensure_directory(directory: str) -> bool:
@@ -162,15 +192,24 @@ def get_package_name(file_path: str) -> str:
         import re
         match = re.search(r'package\s+([\w.]+);', content)
         if match:
-            return match.group(1)
-    except (IOError, UnicodeDecodeError):
-        pass
+            package_name = match.group(1)
+            logging.debug(f"Extracted package name from file: {package_name}")
+            return package_name
+    except (IOError, UnicodeDecodeError) as e:
+        logging.error(f"Error reading file {file_path}: {str(e)}")
         
-    # If no package found, derive from path
-    parts = file_path.split(os.sep)
+    # If no package found or error occurred, derive from path
+    parts = Path(file_path).parts
     if "java" in parts:
         java_index = parts.index("java")
-        return ".".join(parts[java_index + 1:-1])
+        # Extract package parts after java directory, but before the file name
+        package_parts = parts[java_index + 1:-1]
+        # Join with dots to create a package name
+        package_name = ".".join(package_parts)
+        logging.debug(f"Derived package name from path: {package_name}")
+        return package_name
+    
+    logging.warning(f"Could not determine package name for {file_path}")
     return ""
 
 
